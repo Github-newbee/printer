@@ -10,6 +10,7 @@ from werkzeug.datastructures import FileStorage
 from repositories.job_repository import JobRepository
 from services.errors import JobNotFoundError, PrinterNotFoundError, QueueFailedError
 from services.file_service import FileService
+from services.print_options import DEFAULT_PAPER_SIZE, normalize_paper_size
 from services.printer_service import PrinterService
 
 
@@ -20,7 +21,6 @@ def new_job_id() -> str:
 
 PAGE_RANGE_PATTERN = re.compile(r"^\d+(-\d+)?(,\d+(-\d+)?)*$")
 ALLOWED_ORIENTATIONS = {"portrait", "landscape"}
-ALLOWED_PAPER_SIZES = {"A4"}
 
 
 class JobService:
@@ -129,7 +129,7 @@ class JobService:
             "printer_name": job["printer_name"],
             "page_range": job.get("page_range"),
             "copies": job.get("copies", 1),
-            "paper_size": job.get("paper_size", "A4"),
+            "paper_size": job.get("paper_size", DEFAULT_PAPER_SIZE),
             "orientation": job.get("orientation", "portrait"),
             "status": job["status"],
             "delivery_level": "submitted_to_spooler" if job["status"] in {"submitted", "success"} else None,
@@ -167,10 +167,7 @@ class JobService:
         return value
 
     def _normalize_paper_size(self, paper_size: str | None) -> str:
-        value = (paper_size or "A4").strip().upper()
-        if value not in ALLOWED_PAPER_SIZES:
-            raise ValueError("Invalid paper size")
-        return value
+        return normalize_paper_size(paper_size)
 
     def _normalize_orientation(self, orientation: str | None) -> str:
         value = (orientation or "portrait").strip().lower()

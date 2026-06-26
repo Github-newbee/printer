@@ -8,6 +8,7 @@ from queue import Empty, Queue
 
 from config import Config
 from repositories.job_repository import JobRepository
+from services.print_options import get_sumatra_paper_size
 
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,12 @@ class PrintWorker:
             "-print-to",
             str(job["printer_name"]),
         ]
-        print_settings = self._print_settings(job)
+        try:
+            print_settings = self._print_settings(job)
+        except ValueError as exc:
+            self.repository.mark_failed(job_id, str(exc))
+            logger.error("job_id=%s action=print status=failed message=%s", job_id, exc)
+            return
         if print_settings:
             command.extend(["-print-settings", print_settings])
         command.extend(["-silent", str(stored_path)])
@@ -113,12 +119,14 @@ class PrintWorker:
             settings.append(f"{copies}x")
 
         orientation = str(job.get("orientation") or "").strip().lower()
-        if orientation in {"portrait", "landscape"}:
-            settings.append(orientation)
+        if orientation == "portrait":
+            settings.append("disable-auto-rotation")
+        elif orientation == "landscape":
+            settings.extend(["landscape", "disable-auto-rotation"])
 
-        paper_size = str(job.get("paper_size") or "").strip().upper()
-        if paper_size == "A4":
-            settings.append("paper=A4")
+        paper_size = get_sumatra_paper_size(job.get("paper_size") if job.get("paper_size") else None)
+        if paper_size:
+            settings.append(f"paper={paper_size}")
 
         return ",".join(settings) if settings else None
 

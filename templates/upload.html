@@ -111,7 +111,7 @@
         <div class="settings-form">
           <label>
             纸张大小
-            <input id="paper-size-input" value="A4 (210 x 297 mm)" readonly>
+            <select id="paper-size-select" aria-label="纸张大小"></select>
           </label>
 
           <fieldset class="orientation-field">
@@ -172,12 +172,21 @@
     const closeSettingsButton = document.querySelector("#close-settings-button");
     const cancelSettingsButton = document.querySelector("#cancel-settings-button");
     const applySettingsButton = document.querySelector("#apply-settings-button");
+    const paperSizeSelect = document.querySelector("#paper-size-select");
     const paperPreview = document.querySelector("#paper-preview");
     const previewCaption = document.querySelector("#preview-caption");
 
+    const DEFAULT_PAPER_SIZE = "A4";
+    const PAPER_PREVIEW_SCALE = 320 / 297;
+    const FALLBACK_PAPER_SIZES = [
+      { code: "A4", label: "A4", width_mm: 210, height_mm: 297 },
+      { code: "A5", label: "A5", width_mm: 148, height_mm: 210 },
+    ];
+
     const files = [];
+    let paperSizeOptions = createPaperSizeMap(FALLBACK_PAPER_SIZES);
     const printSettings = {
-      paperSize: "A4",
+      paperSize: DEFAULT_PAPER_SIZE,
       orientation: "portrait",
     };
 
@@ -214,6 +223,22 @@
       }
     }
 
+    async function loadPrintOptions() {
+      try {
+        const data = await api("/api/print-options");
+        if (Array.isArray(data.paper_sizes) && data.paper_sizes.length) {
+          paperSizeOptions = createPaperSizeMap(data.paper_sizes);
+          renderPaperSizeOptions();
+          updateSummary();
+          if (!settingsModal.hidden) {
+            updatePreview(selectedPaperSize(), selectedOrientation());
+          }
+        }
+      } catch (error) {
+        console.error("加载打印选项失败", error);
+      }
+    }
+
     async function loadJobs() {
       const data = await api("/api/print-jobs?page=1&page_size=10&order_by=created_at&order=desc");
       jobsBody.innerHTML = "";
@@ -232,7 +257,7 @@
           <div class="history-meta">
             <span>${job.page_range ? escapeHtml(job.page_range) : "全部"}</span>
             <span>${job.copies || 1}份</span>
-            <span class="status status-${job.status}">${job.status}</span>
+            <span class="status status-${job.status}">${jobStatusLabel(job.status)}</span>
           </div>
         `;
         jobsBody.appendChild(item);
@@ -332,7 +357,8 @@
       );
       batchSummary.textContent = `总计：${selected.length}个文件，共${pageTotal}页，耗纸${paperTotal}张`;
       clearSelectedButton.textContent = `清除选中(${selected.length}/${files.length})`;
-      printSettingsButton.textContent = `打印设置：A4 · ${orientationLabel(printSettings.orientation)}`;
+      printSettingsButton.textContent =
+        `打印设置：${paperSizeSummary(printSettings.paperSize)} · ${orientationLabel(printSettings.orientation)}`;
     }
 
     function pagesInRange(range, totalPages) {
@@ -365,6 +391,10 @@
     }
 
     async function startBatchPrint() {
+      if (startButton.disabled) {
+        return;
+      }
+
       const selected = files.filter((item) => item.selected);
       if (!printerSelect.value) {
         showMessage("请选择打印机", true);
@@ -375,7 +405,8 @@
         return;
       }
 
-      startButton.disabled = true;
+      const minLoading = delay(2000);
+      setStartButtonLoading(true);
       let successCount = 0;
       try {
         for (const item of selected) {
@@ -407,7 +438,8 @@
           await loadJobs();
         }
       } finally {
-        startButton.disabled = false;
+        await minLoading;
+        setStartButtonLoading(false);
       }
     }
 
@@ -429,17 +461,91 @@
       return value ? new Date(value).toLocaleString() : "-";
     }
 
+    function delay(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    function createPaperSizeMap(items) {
+      const options = {};
+      for (const item of items || []) {
+        if (!item || !item.code) {
+          continue;
+        }
+        const code = String(item.code).toUpperCase();
+        options[code] = {
+          code,
+          label: String(item.label || item.code).toUpperCase(),
+          widthMm: Number(item.width_mm || item.widthMm || 0),
+          heightMm: Number(item.height_mm || item.heightMm || 0),
+        };
+      }
+      return options;
+    }
+
+    function currentPaperSizeOption(paperSize) {
+      const code = String(paperSize || DEFAULT_PAPER_SIZE).toUpperCase();
+      return paperSizeOptions[code] || paperSizeOptions[DEFAULT_PAPER_SIZE] || {
+        code: DEFAULT_PAPER_SIZE,
+        label: DEFAULT_PAPER_SIZE,
+        widthMm: 210,
+        heightMm: 297,
+      };
+    }
+
+    function paperSizeText(paperSize) {
+      const option = currentPaperSizeOption(paperSize);
+      return `${option.label} (${option.widthMm} x ${option.heightMm} mm)`;
+    }
+
+    function paperSizeSummary(paperSize) {
+      return currentPaperSizeOption(paperSize).label;
+    }
+
+    function renderPaperSizeOptions() {
+      const currentValue = printSettings.paperSize;
+      paperSizeSelect.innerHTML = "";
+      for (const option of Object.values(paperSizeOptions)) {
+        const element = document.createElement("option");
+        element.value = option.code;
+        element.textContent = paperSizeText(option.code);
+        paperSizeSelect.appendChild(element);
+      }
+      const nextValue = paperSizeOptions[currentValue] ? currentValue : DEFAULT_PAPER_SIZE;
+      printSettings.paperSize = nextValue;
+      paperSizeSelect.value = nextValue;
+    }
+
     function orientationLabel(value) {
       return value === "landscape" ? "横向" : "纵向";
     }
 
+    function jobStatusLabel(value) {
+      const labels = {
+        pending: "待打印",
+        printing: "打印中",
+        submitted: "已提交",
+        success: "已完成",
+        failed: "打印失败",
+        deleted: "已清理",
+      };
+      return labels[value] || value || "-";
+    }
+
+    function setStartButtonLoading(isLoading) {
+      startButton.disabled = isLoading;
+      startButton.classList.toggle("is-loading", isLoading);
+      startButton.setAttribute("aria-busy", isLoading ? "true" : "false");
+      startButton.textContent = isLoading ? "正在提交" : "开始打印";
+    }
+
     function openSettings() {
       settingsModal.hidden = false;
+      paperSizeSelect.value = printSettings.paperSize;
       const current = settingsModal.querySelector(`input[name="orientation"][value="${printSettings.orientation}"]`);
       if (current) {
         current.checked = true;
       }
-      updatePreview(printSettings.orientation);
+      updatePreview(printSettings.paperSize, printSettings.orientation);
     }
 
     function closeSettings() {
@@ -451,9 +557,16 @@
       return checked ? checked.value : "portrait";
     }
 
-    function updatePreview(orientation) {
+    function selectedPaperSize() {
+      return paperSizeSelect.value || DEFAULT_PAPER_SIZE;
+    }
+
+    function updatePreview(paperSize, orientation) {
+      const option = currentPaperSizeOption(paperSize);
+      paperPreview.style.setProperty("--paper-preview-width", `${Math.round(option.widthMm * PAPER_PREVIEW_SCALE)}px`);
+      paperPreview.style.setProperty("--paper-preview-height", `${Math.round(option.heightMm * PAPER_PREVIEW_SCALE)}px`);
       paperPreview.classList.toggle("landscape", orientation === "landscape");
-      previewCaption.textContent = `A4 · ${orientationLabel(orientation)}`;
+      previewCaption.textContent = `${paperSizeSummary(option.code)} · ${orientationLabel(orientation)}`;
     }
 
     addFileButton.addEventListener("click", () => fileInput.click());
@@ -462,6 +575,7 @@
     closeSettingsButton.addEventListener("click", closeSettings);
     cancelSettingsButton.addEventListener("click", closeSettings);
     applySettingsButton.addEventListener("click", () => {
+      printSettings.paperSize = selectedPaperSize();
       printSettings.orientation = selectedOrientation();
       updateSummary();
       closeSettings();
@@ -472,8 +586,8 @@
       }
     });
     settingsModal.addEventListener("change", (event) => {
-      if (event.target.name === "orientation") {
-        updatePreview(event.target.value);
+      if (event.target.name === "orientation" || event.target === paperSizeSelect) {
+        updatePreview(selectedPaperSize(), selectedOrientation());
       }
     });
     document.addEventListener("keydown", (event) => {
@@ -544,7 +658,9 @@
     refreshButton.addEventListener("click", loadJobs);
     startButton.addEventListener("click", startBatchPrint);
 
+    renderPaperSizeOptions();
     updateSummary();
+    loadPrintOptions();
     loadPrinters();
     loadJobs();
     setInterval(loadJobs, 5000);

@@ -14,6 +14,7 @@ from services.cleanup_service import CleanupService
 from services.errors import FileTooLargeError, ServiceError
 from services.file_service import FileService
 from services.job_service import JobService
+from services.print_options import get_paper_size_options
 from services.printer_service import PrinterService
 from workers.print_worker import PrintWorker
 
@@ -92,6 +93,10 @@ def register_routes(app: Flask) -> None:
     def list_printers():
         printer_service: PrinterService = app.extensions["print_service"]["printer_service"]
         return ok({"items": printer_service.list_printers()})
+
+    @app.get("/api/print-options")
+    def get_print_options():
+        return ok({"paper_sizes": get_paper_size_options()})
 
     @app.post("/api/print-jobs")
     def create_print_job():

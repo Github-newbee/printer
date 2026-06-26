@@ -434,11 +434,26 @@ button:disabled {
   background: var(--blue);
   box-shadow: 0 8px 18px rgba(0, 122, 255, 0.22);
   color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-width: 108px;
 }
 
 .primary-button:hover {
   background: var(--blue-hover);
+}
+
+.primary-button.is-loading::before {
+  animation: button-spin 0.8s linear infinite;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  border-top-color: #fff;
+  content: "";
+  display: inline-block;
+  height: 14px;
+  width: 14px;
 }
 
 .secondary-button {
@@ -570,11 +585,6 @@ button:disabled {
   gap: 18px;
 }
 
-.settings-form input[readonly] {
-  background: rgba(0, 0, 0, 0.035);
-  color: var(--text-muted);
-}
-
 .orientation-field {
   border: 0;
   display: grid;
@@ -640,15 +650,15 @@ button:disabled {
   border: 1px solid rgba(0, 0, 0, 0.06);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.1);
   display: flex;
-  height: 320px;
+  height: min(var(--paper-preview-height, 320px), 320px);
   justify-content: center;
   transition: height 180ms ease, width 180ms ease;
-  width: 226px;
+  width: min(var(--paper-preview-width, 226px), 226px);
 }
 
 .paper-preview.landscape {
-  height: 226px;
-  width: 320px;
+  height: min(var(--paper-preview-width, 226px), 226px);
+  width: min(var(--paper-preview-height, 320px), 320px);
 }
 
 .preview-content {
@@ -784,6 +794,12 @@ button:disabled {
   color: var(--text-muted);
 }
 
+@keyframes button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 780px) {
   .app-shell {
     gap: 12px;
@@ -828,12 +844,12 @@ button:disabled {
   }
 
   .paper-preview {
-    height: 260px;
-    width: 184px;
+    height: min(var(--paper-preview-height, 320px), 260px);
+    width: min(var(--paper-preview-width, 226px), 184px);
   }
 
   .paper-preview.landscape {
-    height: 184px;
-    width: 260px;
+    height: min(var(--paper-preview-width, 226px), 184px);
+    width: min(var(--paper-preview-height, 320px), 260px);
   }
 }

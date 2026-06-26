@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from config import Config
+from services.print_options import DEFAULT_PAPER_SIZE
 
 
 STATUSES = {"pending", "printing", "submitted", "success", "failed", "deleted"}
@@ -34,7 +35,7 @@ class JobRepository:
         self.config.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:
             conn.execute(
-                """
+                f"""
                 CREATE TABLE IF NOT EXISTS print_jobs (
                   id TEXT PRIMARY KEY,
                   user_id TEXT,
@@ -45,7 +46,7 @@ class JobRepository:
                   printer_name TEXT NOT NULL,
                   page_range TEXT,
                   copies INTEGER NOT NULL DEFAULT 1,
-                  paper_size TEXT NOT NULL DEFAULT 'A4',
+                  paper_size TEXT NOT NULL DEFAULT '{DEFAULT_PAPER_SIZE}',
                   orientation TEXT NOT NULL DEFAULT 'portrait',
                   status TEXT NOT NULL,
                   error_message TEXT,
@@ -65,7 +66,9 @@ class JobRepository:
             if "copies" not in columns:
                 conn.execute("ALTER TABLE print_jobs ADD COLUMN copies INTEGER NOT NULL DEFAULT 1")
             if "paper_size" not in columns:
-                conn.execute("ALTER TABLE print_jobs ADD COLUMN paper_size TEXT NOT NULL DEFAULT 'A4'")
+                conn.execute(
+                    f"ALTER TABLE print_jobs ADD COLUMN paper_size TEXT NOT NULL DEFAULT '{DEFAULT_PAPER_SIZE}'"
+                )
             if "orientation" not in columns:
                 conn.execute("ALTER TABLE print_jobs ADD COLUMN orientation TEXT NOT NULL DEFAULT 'portrait'")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_print_jobs_status ON print_jobs(status)")
