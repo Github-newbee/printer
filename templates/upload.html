@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>内部打印服务</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="print-workspace" aria-label="批量打印">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div>
+            <h1>批量打印</h1>
+            <p>PDF 文件进入队列后由内网打印服务依次提交。</p>
+          </div>
+        </div>
+
+        <div class="topbar-controls">
+          <label>
+            用户名称（可选）
+            <input id="user-name" autocomplete="name" placeholder="请输入姓名">
+          </label>
+          <label>
+            打印机
+            <select id="printer-select" required>
+              <option value="">正在加载打印机...</option>
+            </select>
+          </label>
+        </div>
+      </header>
+
+      <div class="batch-board">
+        <div class="table-wrap">
+          <table class="file-table">
+            <colgroup>
+              <col class="select-col">
+              <col class="name-col">
+              <col class="pages-col">
+              <col class="range-col">
+              <col class="copies-col">
+              <col class="status-col">
+              <col class="action-col">
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="check-cell">
+                  <input id="select-all" type="checkbox" aria-label="选择全部文件">
+                </th>
+                <th>文件名</th>
+                <th class="number-cell">文档页数</th>
+                <th>打印页面范围</th>
+                <th>份数</th>
+                <th>状态</th>
+                <th class="action-cell">操作</th>
+              </tr>
+            </thead>
+            <tbody id="file-body">
+              <tr class="empty-row">
+                <td colspan="7">
+                  <div class="empty-state">
+                    <strong>添加 PDF 文件开始批量打印</strong>
+                    <span>支持一次选择多个文件，也可以添加文件夹中的 PDF。</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <footer class="batch-actions">
+          <div class="left-actions">
+            <button id="add-file-button" class="link-button" type="button">+ 添加文件</button>
+            <button id="add-folder-button" class="link-button muted" type="button">添加文件夹</button>
+            <button id="print-settings-button" class="link-button muted" type="button">打印设置</button>
+            <button id="clear-selected-button" class="link-button muted danger" type="button">清除选中(0/0)</button>
+          </div>
+
+          <div class="summary">
+            <span id="batch-summary">总计：0个文件，共0页，耗纸0张</span>
+            <button id="refresh-button" class="secondary-button" type="button">刷新任务</button>
+            <button id="start-button" class="primary-button" type="button">开始打印</button>
+          </div>
+        </footer>
+      </div>
+
+      <p id="message" class="message" role="status"></p>
+    </section>
+
+    <section class="history-panel" aria-label="最近任务">
+      <div class="section-title">
+        <h2>最近任务</h2>
+        <span id="queue-hint">每 5 秒自动刷新</span>
+      </div>
+      <div class="history-list" id="jobs-body">
+        <div class="history-empty">暂无任务</div>
+      </div>
+    </section>
+  </main>
+
+  <div id="settings-modal" class="modal-backdrop" hidden>
+    <section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <header class="settings-header">
+        <h2 id="settings-title">打印设置</h2>
+        <button id="close-settings-button" class="close-button" type="button" aria-label="关闭打印设置">×</button>
+      </header>
+
+      <div class="settings-body">
+        <div class="settings-form">
+          <label>
+            纸张大小
+            <input id="paper-size-input" value="A4 (210 x 297 mm)" readonly>
+          </label>
+
+          <fieldset class="orientation-field">
+            <legend>纸张方向</legend>
+            <label class="radio-option">
+              <input type="radio" name="orientation" value="portrait" checked>
+              纵向
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="orientation" value="landscape">
+              横向
+            </label>
+          </fieldset>
+        </div>
+
+        <aside class="preview-panel" aria-label="预览">
+          <h3>预览</h3>
+          <div class="paper-preview" id="paper-preview">
+            <div class="preview-content">
+              <span class="preview-title">PDF</span>
+              <span class="preview-line wide"></span>
+              <span class="preview-line"></span>
+              <span class="preview-box"></span>
+              <span class="preview-line short"></span>
+            </div>
+          </div>
+          <p id="preview-caption">A4 · 纵向</p>
+        </aside>
+      </div>
+
+      <footer class="settings-actions">
+        <button id="cancel-settings-button" class="secondary-button" type="button">取消</button>
+        <button id="apply-settings-button" class="primary-button" type="button">应用</button>
+      </footer>
+    </section>
+  </div>
+
+  <input id="file-input" type="file" accept="application/pdf,.pdf" multiple hidden>
+  <input id="folder-input" type="file" accept="application/pdf,.pdf" multiple webkitdirectory hidden>
+
+  <script>
+    const printerSelect = document.querySelector("#printer-select");
+    const userNameInput = document.querySelector("#user-name");
+    const message = document.querySelector("#message");
+    const jobsBody = document.querySelector("#jobs-body");
+    const refreshButton = document.querySelector("#refresh-button");
+    const fileInput = document.querySelector("#file-input");
+    const folderInput = document.querySelector("#folder-input");
+    const addFileButton = document.querySelector("#add-file-button");
+    const addFolderButton = document.querySelector("#add-folder-button");
+    const printSettingsButton = document.querySelector("#print-settings-button");
+    const clearSelectedButton = document.querySelector("#clear-selected-button");
+    const startButton = document.querySelector("#start-button");
+    const fileBody = document.querySelector("#file-body");
+    const selectAll = document.querySelector("#select-all");
+    const batchSummary = document.querySelector("#batch-summary");
+    const settingsModal = document.querySelector("#settings-modal");
+    const closeSettingsButton = document.querySelector("#close-settings-button");
+    const cancelSettingsButton = document.querySelector("#cancel-settings-button");
+    const applySettingsButton = document.querySelector("#apply-settings-button");
+    const paperPreview = document.querySelector("#paper-preview");
+    const previewCaption = document.querySelector("#preview-caption");
+
+    const files = [];
+    const printSettings = {
+      paperSize: "A4",
+      orientation: "portrait",
+    };
+
+    async function api(path, options) {
+      const response = await fetch(path, options);
+      const body = await response.json();
+      if (!response.ok || body.code !== "OK") {
+        throw new Error(body.message || "服务异常");
+      }
+      return body.data;
+    }
+
+    async function loadPrinters() {
+      try {
+        const data = await api("/api/printers");
+        const currentValue = printerSelect.value;
+        printerSelect.innerHTML = "";
+        if (!data.items.length) {
+          printerSelect.innerHTML = '<option value="">未找到可用打印机</option>';
+          return;
+        }
+        for (const printer of data.items) {
+          const option = document.createElement("option");
+          option.value = printer.name;
+          option.textContent = printer.name;
+          printerSelect.appendChild(option);
+        }
+        if (currentValue) {
+          printerSelect.value = currentValue;
+        }
+      } catch (error) {
+        printerSelect.innerHTML = '<option value="">打印机加载失败</option>';
+        showMessage(error.message, true);
+      }
+    }
+
+    async function loadJobs() {
+      const data = await api("/api/print-jobs?page=1&page_size=10&order_by=created_at&order=desc");
+      jobsBody.innerHTML = "";
+      if (!data.items.length) {
+        jobsBody.innerHTML = '<div class="history-empty">暂无任务</div>';
+        return;
+      }
+      for (const job of data.items) {
+        const item = document.createElement("article");
+        item.className = "history-item";
+        item.innerHTML = `
+          <div>
+            <strong>${escapeHtml(job.source_filename)}</strong>
+            <span>${escapeHtml(job.printer_name)} · ${formatTime(job.created_at)}</span>
+          </div>
+          <div class="history-meta">
+            <span>${job.page_range ? escapeHtml(job.page_range) : "全部"}</span>
+            <span>${job.copies || 1}份</span>
+            <span class="status status-${job.status}">${job.status}</span>
+          </div>
+        `;
+        jobsBody.appendChild(item);
+      }
+    }
+
+    async function addFiles(fileList) {
+      const pdfFiles = Array.from(fileList).filter((file) => file.name.toLowerCase().endsWith(".pdf"));
+      if (!pdfFiles.length) {
+        showMessage("请选择 PDF 文件", true);
+        return;
+      }
+
+      for (const file of pdfFiles) {
+        const pages = await countPdfPages(file);
+        files.push({
+          id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+          file,
+          selected: true,
+          pages,
+          pageRange: pages > 0 ? `1-${pages}` : "",
+          copies: 1,
+          status: "待打印",
+          jobId: null,
+        });
+      }
+
+      renderFiles();
+      showMessage(`已添加 ${pdfFiles.length} 个 PDF 文件`);
+    }
+
+    async function countPdfPages(file) {
+      try {
+        const text = await file.text();
+        const matches = text.match(/\/Type\s*\/Page\b/g);
+        return Math.max(matches ? matches.length : 1, 1);
+      } catch {
+        return 1;
+      }
+    }
+
+    function renderFiles() {
+      if (!files.length) {
+        fileBody.innerHTML = `
+          <tr class="empty-row">
+            <td colspan="7">
+              <div class="empty-state">
+                <strong>添加 PDF 文件开始批量打印</strong>
+                <span>支持一次选择多个文件，也可以添加文件夹中的 PDF。</span>
+              </div>
+            </td>
+          </tr>
+        `;
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
+        updateSummary();
+        return;
+      }
+
+      fileBody.innerHTML = "";
+      for (const item of files) {
+        const row = document.createElement("tr");
+        row.dataset.id = item.id;
+        row.innerHTML = `
+          <td class="check-cell">
+            <input class="row-check" type="checkbox" ${item.selected ? "checked" : ""} aria-label="选择文件">
+          </td>
+          <td>
+            <div class="file-name">
+              <span title="${escapeHtml(item.file.name)}">${escapeHtml(item.file.name)}</span>
+            </div>
+          </td>
+          <td class="number-cell">${item.pages}</td>
+          <td>
+            <input class="range-input" value="${escapeHtml(item.pageRange)}" placeholder="全部">
+          </td>
+          <td>
+            <input class="copies-input" type="number" min="1" max="99" value="${item.copies}">
+          </td>
+          <td><span class="batch-status">${escapeHtml(item.status)}</span></td>
+          <td class="action-cell">
+            <button class="icon-button delete-button" type="button" aria-label="删除文件">删除</button>
+          </td>
+        `;
+        fileBody.appendChild(row);
+      }
+      syncSelectAll();
+      updateSummary();
+    }
+
+    function updateSummary() {
+      const selected = files.filter((item) => item.selected);
+      const pageTotal = selected.reduce((sum, item) => sum + pagesInRange(item.pageRange, item.pages), 0);
+      const paperTotal = selected.reduce(
+        (sum, item) => sum + pagesInRange(item.pageRange, item.pages) * Number(item.copies || 1),
+        0,
+      );
+      batchSummary.textContent = `总计：${selected.length}个文件，共${pageTotal}页，耗纸${paperTotal}张`;
+      clearSelectedButton.textContent = `清除选中(${selected.length}/${files.length})`;
+      printSettingsButton.textContent = `打印设置：A4 · ${orientationLabel(printSettings.orientation)}`;
+    }
+
+    function pagesInRange(range, totalPages) {
+      const value = String(range || "").replaceAll(" ", "");
+      if (!value) {
+        return totalPages;
+      }
+      let total = 0;
+      for (const part of value.split(",")) {
+        if (!part) {
+          continue;
+        }
+        if (part.includes("-")) {
+          const [start, end] = part.split("-").map(Number);
+          if (!start || !end || end < start) {
+            return totalPages;
+          }
+          total += end - start + 1;
+        } else {
+          total += 1;
+        }
+      }
+      return Math.min(total, totalPages);
+    }
+
+    function syncSelectAll() {
+      const selectedCount = files.filter((item) => item.selected).length;
+      selectAll.checked = files.length > 0 && selectedCount === files.length;
+      selectAll.indeterminate = selectedCount > 0 && selectedCount < files.length;
+    }
+
+    async function startBatchPrint() {
+      const selected = files.filter((item) => item.selected);
+      if (!printerSelect.value) {
+        showMessage("请选择打印机", true);
+        return;
+      }
+      if (!selected.length) {
+        showMessage("请选择要打印的文件", true);
+        return;
+      }
+
+      startButton.disabled = true;
+      let successCount = 0;
+      try {
+        for (const item of selected) {
+          item.status = "提交中";
+          renderFiles();
+          const formData = new FormData();
+          formData.append("file", item.file);
+          formData.append("printer_name", printerSelect.value);
+          formData.append("user_name", userNameInput.value);
+          formData.append("page_range", item.pageRange);
+          formData.append("copies", item.copies);
+          formData.append("paper_size", printSettings.paperSize);
+          formData.append("orientation", printSettings.orientation);
+
+          try {
+            const data = await api("/api/print-jobs", { method: "POST", body: formData });
+            item.status = "已入队";
+            item.jobId = data.id;
+            successCount += 1;
+          } catch (error) {
+            item.status = "提交失败";
+            showMessage(`${item.file.name}：${error.message}`, true);
+          }
+          renderFiles();
+        }
+
+        if (successCount) {
+          showMessage(`已提交 ${successCount} 个打印任务`);
+          await loadJobs();
+        }
+      } finally {
+        startButton.disabled = false;
+      }
+    }
+
+    function showMessage(text, isError = false) {
+      message.textContent = text;
+      message.className = isError ? "message error" : "message success";
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatTime(value) {
+      return value ? new Date(value).toLocaleString() : "-";
+    }
+
+    function orientationLabel(value) {
+      return value === "landscape" ? "横向" : "纵向";
+    }
+
+    function openSettings() {
+      settingsModal.hidden = false;
+      const current = settingsModal.querySelector(`input[name="orientation"][value="${printSettings.orientation}"]`);
+      if (current) {
+        current.checked = true;
+      }
+      updatePreview(printSettings.orientation);
+    }
+
+    function closeSettings() {
+      settingsModal.hidden = true;
+    }
+
+    function selectedOrientation() {
+      const checked = settingsModal.querySelector('input[name="orientation"]:checked');
+      return checked ? checked.value : "portrait";
+    }
+
+    function updatePreview(orientation) {
+      paperPreview.classList.toggle("landscape", orientation === "landscape");
+      previewCaption.textContent = `A4 · ${orientationLabel(orientation)}`;
+    }
+
+    addFileButton.addEventListener("click", () => fileInput.click());
+    addFolderButton.addEventListener("click", () => folderInput.click());
+    printSettingsButton.addEventListener("click", openSettings);
+    closeSettingsButton.addEventListener("click", closeSettings);
+    cancelSettingsButton.addEventListener("click", closeSettings);
+    applySettingsButton.addEventListener("click", () => {
+      printSettings.orientation = selectedOrientation();
+      updateSummary();
+      closeSettings();
+    });
+    settingsModal.addEventListener("click", (event) => {
+      if (event.target === settingsModal) {
+        closeSettings();
+      }
+    });
+    settingsModal.addEventListener("change", (event) => {
+      if (event.target.name === "orientation") {
+        updatePreview(event.target.value);
+      }
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !settingsModal.hidden) {
+        closeSettings();
+      }
+    });
+    fileInput.addEventListener("change", async () => {
+      await addFiles(fileInput.files);
+      fileInput.value = "";
+    });
+    folderInput.addEventListener("change", async () => {
+      await addFiles(folderInput.files);
+      folderInput.value = "";
+    });
+    clearSelectedButton.addEventListener("click", () => {
+      for (let index = files.length - 1; index >= 0; index -= 1) {
+        if (files[index].selected) {
+          files.splice(index, 1);
+        }
+      }
+      renderFiles();
+    });
+    selectAll.addEventListener("change", () => {
+      files.forEach((item) => {
+        item.selected = selectAll.checked;
+      });
+      renderFiles();
+    });
+    fileBody.addEventListener("input", (event) => {
+      const row = event.target.closest("tr");
+      const item = row ? files.find((entry) => entry.id === row.dataset.id) : null;
+      if (!item) {
+        return;
+      }
+      if (event.target.classList.contains("range-input")) {
+        item.pageRange = event.target.value;
+      }
+      if (event.target.classList.contains("copies-input")) {
+        item.copies = Math.max(1, Math.min(99, Number(event.target.value || 1)));
+      }
+      updateSummary();
+    });
+    fileBody.addEventListener("change", (event) => {
+      const row = event.target.closest("tr");
+      const item = row ? files.find((entry) => entry.id === row.dataset.id) : null;
+      if (!item) {
+        return;
+      }
+      if (event.target.classList.contains("row-check")) {
+        item.selected = event.target.checked;
+        syncSelectAll();
+        updateSummary();
+      }
+    });
+    fileBody.addEventListener("click", (event) => {
+      const button = event.target.closest(".delete-button");
+      if (!button) {
+        return;
+      }
+      const row = button.closest("tr");
+      const index = files.findIndex((entry) => entry.id === row.dataset.id);
+      if (index >= 0) {
+        files.splice(index, 1);
+        renderFiles();
+      }
+    });
+    refreshButton.addEventListener("click", loadJobs);
+    startButton.addEventListener("click", startBatchPrint);
+
+    updateSummary();
+    loadPrinters();
+    loadJobs();
+    setInterval(loadJobs, 5000);
+  </script>
+</body>
+</html>

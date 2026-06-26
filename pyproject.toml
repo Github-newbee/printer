@@ -1,0 +1,15 @@
+[project]
+name = "print-service"
+version = "0.1.0"
+description = "Internal PDF print service MVP"
+readme = "MVP开发文档.md"
+requires-python = ">=3.10"
+dependencies = [
+    "flask>=3.0.0",
+    "pywin32>=306; platform_system == 'Windows'",
+    "waitress>=3.0.0",
+]
+
+[tool.uv]
+package = false
+
