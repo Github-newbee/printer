@@ -8,7 +8,7 @@ from queue import Empty, Queue
 
 from config import Config
 from repositories.job_repository import JobRepository
-from services.print_options import get_sumatra_paper_size
+from services.print_options import get_sumatra_paper_setting
 
 
 logger = logging.getLogger(__name__)
@@ -124,9 +124,9 @@ class PrintWorker:
         elif orientation == "landscape":
             settings.extend(["landscape", "disable-auto-rotation"])
 
-        paper_size = get_sumatra_paper_size(job.get("paper_size") if job.get("paper_size") else None)
-        if paper_size:
-            settings.append(f"paper={paper_size}")
+        paper_setting = get_sumatra_paper_setting(job.get("paper_size") if job.get("paper_size") else None)
+        if paper_setting:
+            settings.append(paper_setting)
 
         return ",".join(settings) if settings else None
 

@@ -11,14 +11,14 @@ PAPER_SPECS: Final[dict[str, dict[str, object]]] = {
         "label": "A4",
         "width_mm": 210,
         "height_mm": 297,
-        "sumatra_name": "A4",
+        "sumatra_paperkind": 9,
     },
     "A5": {
         "code": "A5",
         "label": "A5",
         "width_mm": 148,
         "height_mm": 210,
-        "sumatra_name": "A5",
+        "sumatra_paperkind": 11,
     },
 }
 
@@ -44,7 +44,7 @@ def get_paper_size_options() -> list[dict[str, object]]:
     return options
 
 
-def get_sumatra_paper_size(paper_size: str | None) -> str | None:
+def get_sumatra_paper_setting(paper_size: str | None) -> str | None:
     code = normalize_paper_size(paper_size)
-    value = str(PAPER_SPECS[code].get("sumatra_name") or "").strip()
-    return value or None
+    paperkind = PAPER_SPECS[code].get("sumatra_paperkind")
+    return f"paperkind={paperkind}" if paperkind else None

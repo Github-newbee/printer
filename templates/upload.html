@@ -117,11 +117,11 @@
           <fieldset class="orientation-field">
             <legend>纸张方向</legend>
             <label class="radio-option">
-              <input type="radio" name="orientation" value="portrait" checked>
+              <input type="radio" name="orientation" value="portrait">
               纵向
             </label>
             <label class="radio-option">
-              <input type="radio" name="orientation" value="landscape">
+              <input type="radio" name="orientation" value="landscape" checked>
               横向
             </label>
           </fieldset>
@@ -138,7 +138,7 @@
               <span class="preview-line short"></span>
             </div>
           </div>
-          <p id="preview-caption">A4 · 纵向</p>
+          <p id="preview-caption">A5 · 横向</p>
         </aside>
       </div>
 
@@ -176,7 +176,7 @@
     const paperPreview = document.querySelector("#paper-preview");
     const previewCaption = document.querySelector("#preview-caption");
 
-    const DEFAULT_PAPER_SIZE = "A4";
+    const DEFAULT_PAPER_SIZE = "A5";
     const PAPER_PREVIEW_SCALE = 320 / 297;
     const FALLBACK_PAPER_SIZES = [
       { code: "A4", label: "A4", width_mm: 210, height_mm: 297 },
@@ -187,7 +187,7 @@
     let paperSizeOptions = createPaperSizeMap(FALLBACK_PAPER_SIZES);
     const printSettings = {
       paperSize: DEFAULT_PAPER_SIZE,
-      orientation: "portrait",
+      orientation: "landscape",
     };
 
     async function api(path, options) {
